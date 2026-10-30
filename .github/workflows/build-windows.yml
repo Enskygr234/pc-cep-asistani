@@ -6,6 +6,9 @@ on:
     paths-ignore:
       - "docs/**"
       - "README.md"
+      - "site/**"
+      - ".github/workflows/pages.yml"
+      - ".github/workflows/nvidia-test.yml"
   pull_request:
   workflow_dispatch:
 

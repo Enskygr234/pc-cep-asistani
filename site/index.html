@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>NVIDIA API Anahtar Testi</title>
+<style>
+  :root { --bg:#0b0f17; --card:#141b27; --line:#243044; --text:#e6edf6; --muted:#8b98ab;
+          --green:#76b900; --green2:#5f9600; --red:#f87171; --amber:#fbbf24; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:24px; margin:8px 0 4px; }
+  h1 span { color:var(--green); }
+  .sub { color:var(--muted); margin:0 0 20px; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:13px; font-weight:600; color:var(--muted); margin:12px 0 6px; text-transform:uppercase; letter-spacing:.03em; }
+  label:first-child { margin-top:0; }
+  input, select, textarea { width:100%; background:#0d131d; color:var(--text); border:1px solid var(--line);
+         border-radius:10px; padding:12px; font:inherit; font-size:16px; }
+  textarea { min-height:90px; resize:vertical; }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--green); border-color:transparent; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button { width:100%; border:0; border-radius:10px; padding:14px; font:inherit; font-weight:700; cursor:pointer;
+           background:var(--green); color:#0b0f17; margin-top:14px; }
+  button:active { background:var(--green2); }
+  button:disabled { opacity:.6; cursor:wait; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  .hint { font-size:13px; color:var(--muted); margin-top:6px; }
+  .status { display:none; border-radius:10px; padding:12px; margin-top:14px; font-size:14px; }
+  .status.ok { display:block; background:#13260b; border:1px solid #3d6b12; }
+  .status.err { display:block; background:#2a1215; border:1px solid #6b2a30; }
+  .status.warn { display:block; background:#2a2310; border:1px solid #6b5a1c; }
+  pre { white-space:pre-wrap; word-break:break-word; background:#0d131d; border:1px solid var(--line);
+        border-radius:10px; padding:12px; margin:10px 0 0; font-size:14px; max-height:50vh; overflow:auto; }
+  .meta { font-size:13px; color:var(--muted); margin-top:8px; }
+  a { color:#9fd84a; }
+  ol { padding-left:20px; margin:8px 0 0; }
+  ol li { margin:6px 0; }
+  .btnlink { display:block; text-align:center; text-decoration:none; background:var(--green); color:#0b0f17;
+             font-weight:700; border-radius:10px; padding:14px; margin-top:12px; }
+  .btnlink.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  h2 { font-size:17px; margin:0 0 6px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; margin-top:24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>NVIDIA</span> API Anahtar Testi</h1>
+  <p class="sub">build.nvidia.com anahtarının (<code>nvapi-…</code>) çalışıp çalışmadığını dene. Anahtar hiçbir yere kaydedilmez; sayfayı kapatınca silinir.</p>
+
+  <form class="card" id="form" autocomplete="off">
+    <label for="key">API anahtarı</label>
+    <input id="key" type="password" placeholder="nvapi-..." spellcheck="false" autocapitalize="off" required>
+    <div class="hint">Yalnızca doğrudan NVIDIA'ya (integrate.api.nvidia.com) gönderilir.</div>
+
+    <label for="model">Model</label>
+    <div class="row">
+      <select id="model">
+        <option value="meta/llama-3.3-70b-instruct">meta/llama-3.3-70b-instruct</option>
+        <option value="meta/llama-3.1-8b-instruct">meta/llama-3.1-8b-instruct (hızlı)</option>
+        <option value="nvidia/llama-3.3-nemotron-super-49b-v1">nvidia/llama-3.3-nemotron-super-49b-v1</option>
+        <option value="deepseek-ai/deepseek-r1">deepseek-ai/deepseek-r1</option>
+        <option value="__custom">Başka model yaz…</option>
+      </select>
+    </div>
+    <input id="customModel" type="text" placeholder="ör. yayinci/model-adi" style="display:none;margin-top:8px" spellcheck="false" autocapitalize="off">
+
+    <label for="prompt">Mesaj</label>
+    <textarea id="prompt">Merhaba! Kısaca kendini tanıtır mısın?</textarea>
+
+    <button id="go" type="submit">Test et</button>
+    <button id="models" type="button" class="ghost">Kullanılabilir modelleri listele</button>
+
+    <div id="status" class="status"></div>
+  </form>
+
+  <section class="card" id="actions">
+    <h2>Sayfa bağlanamazsa: GitHub Actions ile test</h2>
+    <p class="hint" style="margin-top:0">NVIDIA, API'sine tarayıcıdan yalnızca kendi sitelerinden izin veriyor (CORS). O yüzden yukarıdaki test "bağlantı engellendi" hatası verebilir. Bu durumda aynı testi GitHub'ın sunucusunda çalıştır. Telefondan da olur:</p>
+    <ol>
+      <li><b>Bir kerelik:</b> anahtarı repo'ya gizli olarak ekle. Ad: <code>NVIDIA_API_KEY</code>, değer: anahtarın.
+        <a class="btnlink ghost" href="https://github.com/Enskygr234/pc-cep-asistani/settings/secrets/actions/new" target="_blank" rel="noopener">1) Secret ekle</a></li>
+      <li><b>Run workflow</b>'a bas, model ve mesajı yaz, yeşil butona bas.
+        <a class="btnlink" href="https://github.com/Enskygr234/pc-cep-asistani/actions/workflows/nvidia-test.yml" target="_blank" rel="noopener">2) Testi çalıştır</a></li>
+      <li>Yaklaşık 20 saniye sonra çalışmaya dokun. Cevap <b>Summary</b> bölümünde görünür. Anahtar loglarda gizlenir.</li>
+    </ol>
+  </section>
+
+  <footer>PC Cep Asistanı projesinin bir parçası · Anahtarını kimseyle paylaşma</footer>
+</main>
+
+<script>
+(() => {
+  const API = "https://integrate.api.nvidia.com/v1";
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+
+  $("model").addEventListener("change", () => {
+    $("customModel").style.display = $("model").value === "__custom" ? "block" : "none";
+  });
+
+  function model() {
+    return $("model").value === "__custom" ? $("customModel").value.trim() : $("model").value;
+  }
+  function key() { return $("key").value.trim(); }
+
+  function show(kind, html) {
+    statusEl.className = "status " + kind;
+    statusEl.innerHTML = html;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  const HTTP_HINTS = {
+    401: "Anahtar geçersiz ya da süresi dolmuş. Doğru kopyaladığından emin ol.",
+    403: "Bu anahtarın bu modele erişim izni yok ya da hesap doğrulanmamış.",
+    404: "Model bulunamadı. Model adını kontrol et ya da 'modelleri listele'yi dene.",
+    422: "İstek reddedildi (model bu parametreleri desteklemiyor olabilir).",
+    429: "Çok fazla istek: ücretsiz kotan dolmuş olabilir. Biraz bekleyip tekrar dene.",
+  };
+
+  function corsMessage() {
+    return "<b>Bağlantı engellendi.</b> Bu genellikle anahtarın yanlış olduğu anlamına gelmez: " +
+      "NVIDIA, tarayıcıdan yalnızca kendi sitelerinden gelen isteklere izin veriyor (CORS). " +
+      "Anahtarını aşağıdaki <a href='#actions'>GitHub Actions testi</a> ile dene; o yol bu engele takılmaz.";
+  }
+
+  async function call(path, options) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    try {
+      return await fetch(API + path, { ...options, signal: ctrl.signal, referrerPolicy: "no-referrer" });
+    } finally { clearTimeout(timer); }
+  }
+
+  async function handleError(res) {
+    let detail = "";
+    try { const j = await res.json(); detail = j.detail || j.error?.message || j.message || JSON.stringify(j); }
+    catch { try { detail = await res.text(); } catch {} }
+    show("err", `<b>Hata ${res.status}.</b> ${esc(HTTP_HINTS[res.status] || "Beklenmeyen yanıt.")}` +
+      (detail ? `<pre>${esc(String(detail).slice(0, 800))}</pre>` : ""));
+  }
+
+  function busy(on) { $("go").disabled = on; $("models").disabled = on; }
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!key()) return show("warn", "Önce API anahtarını yapıştır.");
+    if (!/^nvapi-/.test(key())) show("warn", "Uyarı: NVIDIA anahtarları genelde <code>nvapi-</code> ile başlar. Yine de deneniyor…");
+    if (!model()) return show("warn", "Model adı boş.");
+    busy(true);
+    if (!statusEl.classList.contains("warn")) show("warn", "Gönderiliyor…");
+    const t0 = performance.now();
+    try {
+      const res = await call("/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + key(), "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          model: model(),
+          messages: [{ role: "user", content: $("prompt").value || "Merhaba" }],
+          max_tokens: 512, temperature: 0.5, stream: false,
+        }),
+      });
+      if (!res.ok) return await handleError(res);
+      const data = await res.json();
+      const ms = Math.round(performance.now() - t0);
+      const text = data.choices?.[0]?.message?.content ?? "(boş yanıt)";
+      const u = data.usage || {};
+      show("ok", `<b>✓ Anahtar çalışıyor!</b><pre>${esc(text)}</pre>` +
+        `<div class="meta">Model: ${esc(data.model || model())} · ${ms} ms` +
+        (u.total_tokens ? ` · ${u.total_tokens} token` : "") + "</div>");
+    } catch (err) {
+      if (err.name === "AbortError") show("err", "<b>Zaman aşımı.</b> Model 90 saniyede yanıt vermedi; daha küçük bir model dene.");
+      else show("err", corsMessage());
+    } finally { busy(false); }
+  });
+
+  $("models").addEventListener("click", async () => {
+    if (!key()) return show("warn", "Önce API anahtarını yapıştır.");
+    busy(true); show("warn", "Model listesi alınıyor…");
+    try {
+      const res = await call("/models", { headers: { "Authorization": "Bearer " + key(), "Accept": "application/json" } });
+      if (!res.ok) return await handleError(res);
+      const ids = ((await res.json()).data || []).map((m) => m.id).sort();
+      show("ok", `<b>${ids.length} model bulundu.</b> Birini seçip 'Başka model yaz…' alanına yapıştırabilirsin.<pre>${esc(ids.join("\n"))}</pre>`);
+    } catch (err) {
+      show("err", corsMessage());
+    } finally { busy(false); }
+  });
+})();
+</script>
+</body>
+</html>

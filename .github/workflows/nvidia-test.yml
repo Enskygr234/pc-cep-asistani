@@ -1,0 +1,105 @@
+name: NVIDIA API Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model (ör. meta/llama-3.3-70b-instruct)"
+        required: true
+        default: "meta/llama-3.3-70b-instruct"
+      prompt:
+        description: "Mesaj"
+        required: true
+        default: "Merhaba! Kısaca kendini tanıtır mısın?"
+      list_models:
+        description: "Kullanılabilir modelleri de listele"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: NVIDIA API'yi dene
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          MODEL: ${{ inputs.model }}
+          PROMPT: ${{ inputs.prompt }}
+          LIST_MODELS: ${{ inputs.list_models }}
+        shell: python
+        run: |
+          import json, os, re, time, urllib.request, urllib.error
+
+          API = "https://integrate.api.nvidia.com/v1"
+          out = open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8")
+          def say(s=""): out.write(s + "\n"); print(s)
+
+          key = os.environ.get("NVIDIA_API_KEY", "").strip()
+          model = os.environ["MODEL"].strip()
+          prompt = os.environ["PROMPT"]
+
+          say("# NVIDIA API Testi")
+          if not key:
+              say("❌ **`NVIDIA_API_KEY` secret'ı bulunamadı.**")
+              say("")
+              say("Repo → Settings → Secrets and variables → Actions → New repository secret: "
+                  "ad `NVIDIA_API_KEY`, değer anahtarın (`nvapi-...`).")
+              raise SystemExit(1)
+          if not re.fullmatch(r"[A-Za-z0-9._\-]+/[A-Za-z0-9._\-]+", model):
+              say(f"❌ Geçersiz model adı: `{model}` (biçim: `yayinci/model`)")
+              raise SystemExit(1)
+
+          def req(path, body=None):
+              r = urllib.request.Request(API + path, method="POST" if body else "GET",
+                  data=json.dumps(body).encode() if body else None,
+                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                           "Accept": "application/json"})
+              with urllib.request.urlopen(r, timeout=120) as resp:
+                  return json.load(resp)
+
+          hints = {401: "Anahtar geçersiz ya da süresi dolmuş.",
+                   403: "Bu anahtarın bu modele erişimi yok.",
+                   404: "Model bulunamadı; 'modelleri listele' ile tekrar dene.",
+                   429: "Kota/istek sınırı doldu; biraz bekle."}
+
+          failed = False
+          say(f"**Model:** `{model}`  ")
+          say(f"**Mesaj:** {prompt}")
+          say("")
+          t0 = time.time()
+          try:
+              data = req("/chat/completions", {"model": model, "max_tokens": 512, "temperature": 0.5,
+                         "messages": [{"role": "user", "content": prompt}]})
+              ms = int((time.time() - t0) * 1000)
+              text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or "(boş yanıt)"
+              tokens = (data.get("usage") or {}).get("total_tokens", "?")
+              say(f"## ✅ Anahtar çalışıyor ({ms} ms, {tokens} token)")
+              say("")
+              say("**Cevap:**")
+              say("")
+              say("\n".join("> " + line for line in text.splitlines()) or "> (boş)")
+          except urllib.error.HTTPError as e:
+              failed = True
+              detail = e.read().decode("utf-8", "replace")[:800]
+              say(f"## ❌ Hata {e.code}: {hints.get(e.code, 'Beklenmeyen yanıt.')}")
+              say("")
+              say("```\n" + detail.replace(key, "***") + "\n```")
+          except Exception as e:
+              failed = True
+              say(f"## ❌ Bağlantı hatası: {type(e).__name__}: {str(e).replace(key, '***')}")
+
+          if os.environ.get("LIST_MODELS") == "true":
+              try:
+                  ids = sorted(m["id"] for m in req("/models").get("data", []))
+                  say("")
+                  say(f"## Kullanılabilir modeller ({len(ids)})")
+                  say("")
+                  say("```\n" + "\n".join(ids) + "\n```")
+              except Exception as e:
+                  say(f"Model listesi alınamadı: {type(e).__name__}")
+
+          raise SystemExit(1 if failed else 0)
