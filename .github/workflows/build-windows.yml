@@ -3,30 +3,104 @@ name: Build Windows EXE
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # "latest" sürümüne EXE yüklemek için gerekli
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt "pyinstaller>=6.10,<7"
+
       - name: Build EXE
-        run: pyinstaller --noconfirm --onefile --windowed --name PCCepAsistani main.py
-      - name: Upload EXE
-        uses: actions/upload-artifact@v4
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name PCCepAsistani main.py
+
+      - name: Smoke test (self-test raporu)
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD "selftest-rapor.txt"
+          $p = Start-Process -FilePath "dist\PCCepAsistani.exe" -ArgumentList "--self-test", "`"$report`"" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "EXE self-test başarısız (çıkış kodu $($p.ExitCode))" }
+          if (-not (Test-Path $report)) { throw "Rapor dosyası oluşmadı" }
+          Get-Content $report -Encoding UTF8
+          if (-not (Select-String -Path $report -Pattern "RAM:" -Quiet)) { throw "Rapor eksik" }
+
+      - name: Ekran görüntüsü al
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @"
+          using System; using System.Runtime.InteropServices;
+          public struct RECT { public int Left, Top, Right, Bottom; }
+          public static class W {
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+          }
+          "@
+          [W]::SetProcessDPIAware() | Out-Null
+          Start-Process -FilePath "dist\PCCepAsistani.exe"
+          # --onefile EXE asıl pencereyi alt süreçte açar; pencereyi başlığından bul
+          $win = $null
+          for ($i = 0; $i -lt 40 -and -not $win; $i++) {
+            Start-Sleep -Milliseconds 500
+            $win = Get-Process | Where-Object { $_.MainWindowTitle -like "PC Cep*" } | Select-Object -First 1
+          }
+          if (-not $win) { throw "Uygulama penceresi bulunamadı" }
+          Start-Sleep -Seconds 6
+          [W]::SetForegroundWindow($win.MainWindowHandle) | Out-Null
+          Start-Sleep -Milliseconds 800
+          $r = New-Object RECT
+          [W]::GetWindowRect($win.MainWindowHandle, [ref]$r) | Out-Null
+          $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
+          Write-Host "Pencere: $w x $h @ $($r.Left),$($r.Top)"
+          $bmp = New-Object System.Drawing.Bitmap $w, $h
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($r.Left, $r.Top, 0, 0, $bmp.Size)
+          $bmp.Save("$PWD\screenshot.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $g.Dispose(); $bmp.Dispose()
+          Get-Process | Where-Object { $_.ProcessName -eq "PCCepAsistani" } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
         with:
           name: PCCepAsistani-Windows
-          path: dist/PCCepAsistani.exe
+          path: |
+            dist/PCCepAsistani.exe
+            selftest-rapor.txt
+            screenshot.png
           if-no-files-found: error
+
+      - name: Publish "latest" release
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/PCCepAsistani.exe screenshot.png selftest-rapor.txt \
+            --target "$GITHUB_SHA" \
+            --title "PC Cep Asistanı (son sürüm)" \
+            --notes "Otomatik derleme: ${GITHUB_SHA::7}. Windows 10/11 (64-bit) için. İndir: PCCepAsistani.exe"
