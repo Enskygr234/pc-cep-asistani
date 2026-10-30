@@ -60,10 +60,11 @@
     <label for="model">Model</label>
     <div class="row">
       <select id="model">
-        <option value="meta/llama-3.3-70b-instruct">meta/llama-3.3-70b-instruct</option>
-        <option value="meta/llama-3.1-8b-instruct">meta/llama-3.1-8b-instruct (hızlı)</option>
-        <option value="nvidia/llama-3.3-nemotron-super-49b-v1">nvidia/llama-3.3-nemotron-super-49b-v1</option>
-        <option value="deepseek-ai/deepseek-r1">deepseek-ai/deepseek-r1</option>
+        <option value="nvidia/nemotron-3.5-lightning-30b-a3b">nvidia/nemotron-3.5-lightning-30b-a3b (hızlı)</option>
+        <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
+        <option value="deepseek-ai/deepseek-v4.1-flash">deepseek-ai/deepseek-v4.1-flash</option>
+        <option value="google/gemma-4-31b-it">google/gemma-4-31b-it</option>
+        <option value="nvidia/nemotron-3-super-120b-a12b">nvidia/nemotron-3-super-120b-a12b</option>
         <option value="__custom">Başka model yaz…</option>
       </select>
     </div>
@@ -120,6 +121,7 @@
     401: "Anahtar geçersiz ya da süresi dolmuş. Doğru kopyaladığından emin ol.",
     403: "Bu anahtarın bu modele erişim izni yok ya da hesap doğrulanmamış.",
     404: "Model bulunamadı. Model adını kontrol et ya da 'modelleri listele'yi dene.",
+    410: "Bu model NVIDIA'dan kaldırılmış; listeden başka bir model seç.",
     422: "İstek reddedildi (model bu parametreleri desteklemiyor olabilir).",
     429: "Çok fazla istek: ücretsiz kotan dolmuş olabilir. Biraz bekleyip tekrar dene.",
   };
@@ -163,13 +165,14 @@
         body: JSON.stringify({
           model: model(),
           messages: [{ role: "user", content: $("prompt").value || "Merhaba" }],
-          max_tokens: 512, temperature: 0.5, stream: false,
+          max_tokens: 1024, temperature: 0.5, stream: false,
         }),
       });
       if (!res.ok) return await handleError(res);
       const data = await res.json();
       const ms = Math.round(performance.now() - t0);
-      const text = data.choices?.[0]?.message?.content ?? "(boş yanıt)";
+      const m = data.choices?.[0]?.message || {};
+      const text = m.content || m.reasoning_content || "(boş yanıt)";
       const u = data.usage || {};
       show("ok", `<b>✓ Anahtar çalışıyor!</b><pre>${esc(text)}</pre>` +
         `<div class="meta">Model: ${esc(data.model || model())} · ${ms} ms` +
